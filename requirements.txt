@@ -44,4 +44,4 @@ matplotlib-inline==0.1.6
 multidict==6.0.5
 nest-asyncio==1.5.7
 nltk==3.8.1
-psycopg2==2.9.1
+psycopg2
