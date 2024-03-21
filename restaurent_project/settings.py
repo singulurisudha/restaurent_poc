@@ -88,7 +88,7 @@ WSGI_APPLICATION = 'restaurent_project.wsgi.application'
 
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.postgresql",
+        "ENGINE": "django.db.backends.postgresql_psycopg2",
         "HOST": "localhost",
         "NAME": "restaurent_rewamp_db",
         "USER": "postgres",
