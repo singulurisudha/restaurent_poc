@@ -6,7 +6,8 @@ from .api_views import (ItemsListCreate,ItemsRetrieveUpdateDestroy,CategoryListC
                         AdminProfileListCreateAPIView,AdminProfileRetrieveUpdateDestroyAPIView,
                         GalleryRetrieveUpdateDestroy,GalleryListCreate,ContactUsListCreate,ContactUsRetrieveUpdateDestroy,
                         SpecialOfferListCreateAPIView,SpecialOfferRetrieveUpdateDestroyAPIView,UserRegistrationView,UserLoginView,
-                        AllTablesListCreate,AllTablesRetrieveUpdateDestroy,
+                        AllTablesListCreate,AllTablesRetrieveUpdateDestroy,BookTheTableListCreateAPIView,AllTablesRestore,
+                        BookTheTableRetrieveUpdateDestroyAPIView
                         )
 
 urlpatterns = [
@@ -53,4 +54,14 @@ urlpatterns = [
 
     path('admin-profiles/', AdminProfileListCreateAPIView.as_view(), name='admin-profile-list'),
     path('admin-profiles/<int:pk>/',AdminProfileRetrieveUpdateDestroyAPIView.as_view(), name='admin-profile-detail'),
+
+
+    # AllTables Url paths
+    path('tables/', AllTablesListCreate.as_view(), name='all_tables_list_create'),
+    path('tables/<int:pk>/', AllTablesRetrieveUpdateDestroy.as_view(), name='all_tables_retrieve_update_destroy'),
+    path('tables/<int:pk>/restore/', AllTablesRestore.as_view(), name='all_tables_restore'),
+    
+    #BookTheTable Url Paths
+    path('bookings/', BookTheTableListCreateAPIView.as_view(), name='booking-list-create'),
+    path('bookings/<int:pk>/', BookTheTableRetrieveUpdateDestroyAPIView.as_view(), name='booking-retrieve-update-destroy'),
 ]

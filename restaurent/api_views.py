@@ -16,6 +16,7 @@ AdminProfile,
 gallery,
 specialoffers,
 AllTables,
+BookTheTable
 )
 
 from restaurent.serializers import (
@@ -31,7 +32,7 @@ SpecialOfferSerializer,
 UserRegistrationSerializer,
 UserLoginSerializer,
 ForgetPasswordUpdateSerializer,
-AllTablesSerializer
+AllTablesSerializer,BookTheTableSerializer
 )
 
 
@@ -837,4 +838,159 @@ class OrderDetailsRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateAPIView):
 
     
 
+class AllTablesListCreate(generics.ListCreateAPIView):
+    queryset = AllTables.objects.filter(is_deleted=False).order_by('id')
+    serializer_class = AllTablesSerializer
 
+    def get(self, request, *args, **kwargs):
+        items = self.get_queryset()
+        serializer = self.get_serializer(items, many=True)
+        return Response({
+            "message": "Table details fetched successfully",
+            "status code":status.HTTP_200_OK,
+            "result": serializer.data
+        }, status=status.HTTP_200_OK)
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            # Save the subitem
+            serializer.save()
+            return Response({
+                "message": "Table details Successfully created ...",
+                "status_code": status.HTTP_201_CREATED,
+                "result":serializer.data,
+            }, status=status.HTTP_201_CREATED)
+            # return Response(serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AllTablesRetrieveUpdateDestroy(generics.RetrieveUpdateDestroyAPIView):
+    queryset = AllTables.objects.all()
+    serializer_class = AllTablesSerializer
+
+
+    def get(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance:
+            serializer = self.get_serializer(instance)
+            return Response({
+                "message": "Table details retrieved successfully",
+                "status_code": status.HTTP_200_OK,
+                "result": serializer.data,
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response({
+                "message": "Table details not found",
+                "status_code": status.HTTP_404_NOT_FOUND
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+
+    def patch(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance:
+            serializer = self.get_serializer(instance, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response({
+                    "message": "Table details updated successfully",
+                    "status_code": status.HTTP_200_OK,
+                    "result": serializer.data,
+                    
+                }, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            return Response({
+                "message": "Table details not found",
+                "status_code": status.HTTP_404_NOT_FOUND
+            }, status=status.HTTP_404_NOT_FOUND)
+
+    def delete(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance:
+            instance.delete()
+            return Response({
+                "message": "Table details deleted successfully",
+                "status_code": status.HTTP_204_NO_CONTENT
+            }, status=status.HTTP_204_NO_CONTENT)
+        else:
+            return Response({
+                "message": "Table details not found",
+                "status_code": status.HTTP_404_NOT_FOUND
+            }, status=status.HTTP_404_NOT_FOUND)
+
+
+class BookTheTableListCreateAPIView(generics.ListCreateAPIView):
+    queryset = BookTheTable.objects.filter(is_deleted=False).order_by('id')
+    serializer_class = BookTheTableSerializer
+
+    def get(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({
+            "message": "Booking details fetched successfully",
+            "statusCode": status.HTTP_200_OK,
+            "result": serializer.data
+        }, status=status.HTTP_200_OK)
+
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"message": "We are pleased to inform you that your table booking has been successfully confirmed. Below are the details:", "status_code": status.HTTP_201_CREATED, "data": serializer.data}, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class BookTheTableRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = BookTheTable.objects.filter(is_deleted=False).order_by('id')
+    serializer_class = BookTheTableSerializer
+
+
+    def get(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance:
+            serializer = self.get_serializer(instance)
+            return Response({
+                "message": "Table details retrieved successfully",
+                "status_code": status.HTTP_200_OK,
+                "result": serializer.data,
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response({
+                "message": "Table details not found",
+                "status_code": status.HTTP_404_NOT_FOUND
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+
+    def patch(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance:
+            serializer = self.get_serializer(instance, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response({
+                    "message": "Booking details updated successfully",
+                    "status_code": status.HTTP_200_OK,
+                    "result": serializer.data,
+                    
+                }, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            return Response({
+                "message": "Booking details not found",
+                "status_code": status.HTTP_404_NOT_FOUND
+            }, status=status.HTTP_404_NOT_FOUND)
+
+    def delete(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance:
+            instance.delete()
+            return Response({
+                "message": "Booking details deleted successfully",
+                "status_code": status.HTTP_204_NO_CONTENT
+            }, status=status.HTTP_204_NO_CONTENT)
+        else:
+            return Response({
+                "message": "Booking details not found",
+                "status_code": status.HTTP_404_NOT_FOUND
+            }, status=status.HTTP_404_NOT_FOUND)

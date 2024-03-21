@@ -893,3 +893,188 @@ class AllTablesSerializer(serializers.ModelSerializer):
         return data
         
 
+from .models import BookTheTable, AllTables
+from django.core.validators import MinValueValidator
+from django.core.exceptions import ValidationError
+import re
+from django.core.validators import validate_email
+from django.core.exceptions import ValidationError
+from datetime import datetime, time
+from django.utils import timezone
+
+
+
+    
+#AllTablesSerializer Code
+class AllTablesSerializer(serializers.ModelSerializer):
+    STATUS_CHOICES = ['booked', 'available']
+
+    def validate_status(self, value):
+        lowercase_value = value.lower()
+        lowercase_choices = [choice.lower() for choice in self.STATUS_CHOICES]
+        print("Lowercase choices:", lowercase_choices)
+        print("Lowercase value:", lowercase_value)
+        if lowercase_value not in lowercase_choices:
+            raise serializers.ValidationError('Invalid status choice. Status must be one of: {}'.format(', '.join(self.STATUS_CHOICES)))
+        return value
+
+
+    class Meta:
+        model = AllTables
+        fields = ['id', 'table_name', 'no_of_seats', 'status', 'from_time', 'to_time', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+
+    def validate_table_name(self, value):
+        if AllTables.objects.exclude(id=self.instance.id if self.instance else None).filter(table_name__iexact=value).exists():
+            raise serializers.ValidationError('Table name must be unique.')
+        return value
+
+    def validate_positive_integer(self, value):
+        if value is not None and (value < 1 or value > 20):
+            raise serializers.ValidationError('Number of seats must be between 1 and 20.')
+        elif value is not None and value < 0:
+            raise serializers.ValidationError('Number of seats cannot be negative.')
+        return value
+    
+    def validate_no_of_seats(self, value):
+        if value is not None and not 1 <= value <= 20:
+            raise serializers.ValidationError('Number of seats must be between 1 and 20.')
+        return value
+    
+
+    def validate(self, data):
+        from_time = data.get('from_time')
+        to_time = data.get('to_time')
+
+        if from_time and to_time:
+            if from_time >= to_time:
+                raise serializers.ValidationError({'to_time': 'End time must be after start time.'})
+
+        return data
+
+
+
+#BookTheTableSerializer code
+class BookTheTableSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BookTheTable
+        fields = ['id', 'table_id', 'customer_name', 'phone_number', 'email_address', 'total_members', 'date', 'timings', 'is_deleted', 'created_at', 'updated_at']
+        read_only_fields = ['created_at', 'updated_at']
+        
+    def validate(self, data):
+        # Common validations
+        table_id = data.get('table_id')
+        date = data.get('date')
+        timings = data.get('timings')
+        total_members = data.get('total_members')
+
+        if table_id is None:
+            raise serializers.ValidationError({'table_id': 'Table ID cannot be null.'})
+
+        if not isinstance(table_id, AllTables):
+            raise serializers.ValidationError({'table_id': 'Invalid table ID provided.'})
+
+        if total_members is not None and total_members <= 0:
+            raise serializers.ValidationError("Total members must be a positive integer.")
+
+        # Return validated data
+        return data
+    
+    def validate_phone_number(self, value):
+        pattern = r'^\d{10}$'  # 10 digits phone number pattern
+        if not re.match(pattern, value):
+            raise serializers.ValidationError("Invalid phone number format. Phone number must be exactly 10 digits.")
+        return value
+
+    def validate_email_address(self, value):
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', value):
+            raise serializers.ValidationError("Invalid email address format.")
+        return value
+    
+    
+    
+    def create(self, validated_data):
+        # Create method-specific validations
+        table_id = validated_data.get('table_id')
+        date = validated_data.get('date')
+        timings = validated_data.get('timings')
+        total_members = validated_data.get('total_members')
+
+        # Validate total members
+        if total_members is not None and total_members <= 0:
+            raise serializers.ValidationError("Total members must be a positive integer.")
+        
+        # Check if the table is available for booking
+        if table_id:
+            if not table_id.status == 'Available':
+                raise serializers.ValidationError({'table_id': 'Selected table is not available for booking.'})
+
+        if total_members is not None and total_members > table_id.no_of_seats:
+            raise serializers.ValidationError(f'This table has only {table_id.no_of_seats} seats. You cannot book for {total_members} members.')
+
+        # Validate booking date
+        current_date = datetime.now().date()
+        if date < current_date:
+            raise serializers.ValidationError({'date': 'Booking date cannot be in the past.'})
+
+        # Validate booking time
+        current_time = datetime.now().time()
+        if date == current_date and timings <= current_time:
+            raise serializers.ValidationError({'timings': 'Booking time cannot be in the past.'})
+        
+        # Validate operating hours
+        operating_hours_start = time(5, 0)
+        operating_hours_end = time(23, 0)
+        if not (operating_hours_start <= timings <= operating_hours_end):
+            raise serializers.ValidationError({'timings': 'Booking time must be within operating hours (5 a.m. to 11 p.m.).'})
+        
+            # Validate existing bookings
+        existing_bookings = BookTheTable.objects.filter(table_id=table_id, date=date, timings__gte=timings)
+        if existing_bookings.exists():
+            latest_booking = existing_bookings.latest("timings")
+            booking_duration = datetime.combine(date, latest_booking.timings) + timedelta(hours=1)
+            end_time = booking_duration.time()
+            raise serializers.ValidationError({'timings': f'This table is not available for booking at {timings}. Please choose a time after {end_time} or select another table.'})
+
+        # Create the object
+        return BookTheTable.objects.create(**validated_data)
+ 
+    def update(self, instance, validated_data):
+    # Update method-specific validations
+        timings = validated_data.get('timings')
+        date = validated_data.get('date')
+        table_id = validated_data.get('table_id')
+
+        # Validate if booking date is in the past
+        current_date = datetime.now().date()
+        if date < current_date:
+            raise serializers.ValidationError({'date': 'Booking date cannot be in the past.'})
+
+        # Validate if booking time is within operating hours
+        operating_hours_start = time(5, 0)  # Assuming opening time is 5:00 AM
+        operating_hours_end = time(23, 0)   # Assuming closing time is 11:00 PM
+        if not (operating_hours_start <= timings <= operating_hours_end):
+            raise serializers.ValidationError({'timings': 'Booking time must be within operating hours (5 a.m. to 11 p.m.).'})
+
+        # If the booking date is today, check if the time is in the past
+        if date == current_date:
+            current_time = datetime.now().time()
+            if timings <= current_time:
+                raise serializers.ValidationError({'timings': 'Booking time cannot be in the past for today\'s date.'})
+
+        # Check if there is another booking for the same date, time, and table
+        existing_booking = BookTheTable.objects.filter(table_id=table_id, date=date, timings=timings).exclude(id=instance.id).first()
+        if existing_booking:
+            raise serializers.ValidationError({'timings': f'This table is already booked for the same date and time.'})
+
+        # Update the object
+        instance.customer_name = validated_data.get('customer_name', instance.customer_name)
+        instance.phone_number = validated_data.get('phone_number', instance.phone_number)
+        instance.email_address = validated_data.get('email_address', instance.email_address)
+        instance.total_members = validated_data.get('total_members', instance.total_members)
+        instance.date = validated_data.get('date', instance.date)
+        instance.timings = validated_data.get('timings', instance.timings)
+        instance.table_id = validated_data.get('table_id', instance.table_id)  # Update table_id field
+        instance.is_deleted = validated_data.get('is_deleted', instance.is_deleted)
+        instance.save()
+        return instance

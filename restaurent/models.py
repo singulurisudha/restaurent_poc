@@ -204,7 +204,7 @@ class AllTables(models.Model):
 
 class BookTheTable(models.Model):
     table_id = models.ForeignKey(AllTables, on_delete=models.SET_NULL ,null=True, blank=True)
-    name = models.CharField(max_length = 256)
+    customer_name = models.CharField(max_length = 256)
     phone_number = models.CharField(max_length = 50)
     email_address = models.EmailField(max_length=100)
     total_members = models.IntegerField()
@@ -219,7 +219,7 @@ class BookTheTable(models.Model):
         verbose_name_plural = "Table Booking Details"
 
     def __str__(self):
-        return str(self.name) 
+        return str(self.customer_name) 
     
 class AdminProfile(models.Model):
     full_name = models.CharField(max_length = 256)
