@@ -314,13 +314,23 @@ class AdminProfileListCreateAPIView(generics.ListCreateAPIView):
     queryset = AdminProfile.objects.all()
     serializer_class = AdminProfileSerializer
 
+    def get(self, request, *args, **kwargs):
+        queryset = self.get_queryset()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response({
+            "message": "Admin Profile fetched successfully",
+            "statusCode": status.HTTP_200_OK,
+            "result": serializer.data
+        }, status=status.HTTP_200_OK)
+
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if serializer.is_valid():
             serializer.save()
             response_data = {
                 "message": "Admin Profile created successfully",
-                "status_code": status.HTTP_201_CREATED
+                "status_code": status.HTTP_201_CREATED,
+                "result": serializer.data
             }
             return Response(response_data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -329,18 +339,53 @@ class AdminProfileRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPI
     queryset = AdminProfile.objects.all()
     serializer_class = AdminProfileSerializer
 
-    def partial_update(self, request, *args, **kwargs):
+    def get(self, request, *args, **kwargs):
         instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response({"message": "Admin Profile updated successfully"}, status=status.HTTP_200_OK)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        if instance:
+            serializer = self.get_serializer(instance)
+            return Response({
+                "message": "Admin Profile retrieved successfully",
+                "status_code": status.HTTP_200_OK,
+                "result": serializer.data,
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response({
+                "message": "Admin Profile not found",
+                "status_code": status.HTTP_404_NOT_FOUND
+            }, status=status.HTTP_404_NOT_FOUND)
+
+    def patch(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance:
+            serializer = self.get_serializer(instance, data=request.data, partial=True)
+            if serializer.is_valid():
+                serializer.save()
+                return Response({
+                    "message": "Admin Profile updated successfully",
+                    "status_code": status.HTTP_200_OK,
+                    "result": serializer.data,
+                    
+                }, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            return Response({
+                "message": "Admin Profile not found",
+                "status_code": status.HTTP_404_NOT_FOUND
+            }, status=status.HTTP_404_NOT_FOUND)
 
     def delete(self, request, *args, **kwargs):
         instance = self.get_object()
-        instance.delete()
-        return Response({"message": "Admin Profile deleted successfully"}, status=status.HTTP_204_NO_CONTENT)
+        if instance:
+            instance.delete()
+            return Response({
+                "message": "Category deleted successfully",
+                "status_code": status.HTTP_204_NO_CONTENT
+            }, status=status.HTTP_204_NO_CONTENT)
+        else:
+            return Response({
+                "message": "Category not found",
+                "status_code": status.HTTP_404_NOT_FOUND
+            }, status=status.HTTP_404_NOT_FOUND)
 
 class CategoryListCreateAPIView(generics.ListCreateAPIView):
     queryset = category.objects.all()
@@ -605,7 +650,7 @@ class CMSListCreateView(generics.ListCreateAPIView):
             # Save the subitem
             serializer.save()
             return Response({
-                "message": "Content Successfully created sub-item...",
+                "message": "Content  created Successfully.....",
                 "status_code": status.HTTP_201_CREATED,
                 "result":serializer.data,
             }, status=status.HTTP_201_CREATED)
@@ -939,8 +984,14 @@ class BookTheTableListCreateAPIView(generics.ListCreateAPIView):
         if serializer.is_valid():
             serializer.save()
             return Response({"message": "We are pleased to inform you that your table booking has been successfully confirmed. Below are the details:", "status_code": status.HTTP_201_CREATED, "data": serializer.data}, status=status.HTTP_201_CREATED)
+        elif 'table_id' in serializer.errors:
+            error_message = serializer.errors['table_id'][0]
+            if 'does not exist' in error_message:
+                error_message = 'Table does not exist.'
+            return Response({"message": error_message, "status_code": status.HTTP_400_BAD_REQUEST}, status=status.HTTP_400_BAD_REQUEST)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+from datetime import *
 class BookTheTableRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
     queryset = BookTheTable.objects.filter(is_deleted=False).order_by('id')
     serializer_class = BookTheTableSerializer
@@ -980,17 +1031,49 @@ class BookTheTableRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPI
                 "message": "Booking details not found",
                 "status_code": status.HTTP_404_NOT_FOUND
             }, status=status.HTTP_404_NOT_FOUND)
+        
+
+
 
     def delete(self, request, *args, **kwargs):
         instance = self.get_object()
-        if instance:
-            instance.delete()
+        
+        # Get necessary data for response message
+        table_id = instance.table_id.table_name
+        date = instance.date
+        time = instance.timings.strftime("%H:%M")
+
+        # Calculate the cancellation window end time (24 hours before booking time)
+        booking_datetime = datetime(year=date.year, month=date.month, day=date.day,
+                            hour=instance.timings.hour, minute=instance.timings.minute)
+        cancellation_window_end_time = booking_datetime - timedelta(hours=24)
+
+        # Check if cancellation is within the allowed window
+        current_datetime = datetime.now()
+        if current_datetime > cancellation_window_end_time:
             return Response({
-                "message": "Booking details deleted successfully",
-                "status_code": status.HTTP_204_NO_CONTENT
-            }, status=status.HTTP_204_NO_CONTENT)
-        else:
-            return Response({
-                "message": "Booking details not found",
-                "status_code": status.HTTP_404_NOT_FOUND
-            }, status=status.HTTP_404_NOT_FOUND)
+                "message": "Booking cancellation is only allowed up to 24 hours before the booking time.",
+                "status_code": status.HTTP_400_BAD_REQUEST
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Perform deletion
+        instance.delete()
+
+        return Response({
+            "message": f"Booking for Table {table_id} at {time} on {date} cancelled successfully. Thanks for visiting.",
+            "status_code": status.HTTP_204_NO_CONTENT
+        }, status=status.HTTP_204_NO_CONTENT)
+
+    # def delete(self, request, *args, **kwargs):
+    #     instance = self.get_object()
+    #     if instance:
+    #         instance.delete()
+    #         return Response({
+    #             "message": "Booking details cancelled successfully",
+    #             "status_code": status.HTTP_204_NO_CONTENT
+    #         }, status=status.HTTP_204_NO_CONTENT)
+    #     else:
+    #         return Response({
+    #             "message": "Booking details not found",
+    #             "status_code": status.HTTP_404_NOT_FOUND
+    #         }, status=status.HTTP_404_NOT_FOUND)

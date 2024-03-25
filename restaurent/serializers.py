@@ -1,5 +1,7 @@
+from django.forms import ValidationError
 from rest_framework import serializers
 import re
+from django.core.exceptions import ObjectDoesNotExist
 from datetime import timedelta
 from .models import (
     category,
@@ -53,26 +55,23 @@ class SpecialOfferSerializer(serializers.ModelSerializer):
                   'discount', 'status', 'display_order', 'is_deleted', 'created_at', 'updated_at']
         
 
-    def validate(self, data):
-        # Validate the 'status' field
-        status = data.get('status')
+    def create(self, validated_data):
+        status = validated_data.get('status')
+        
+
+        # Validate the 'title' field
+        title = validated_data.get('title')
+        if specialoffers.objects.filter(title=title).exists():
+            raise serializers.ValidationError({'title': 'A special offer with this title already exists.'})
         if status not in [0, 1]:
             raise serializers.ValidationError({'status': 'Status should be either 0 or 1.'})
 
-        # Validate the 'title' field
-        title = data.get('title')
-        if specialoffers.objects.filter(title=title).exists():
-            raise serializers.ValidationError({'title': 'A special offer with this title already exists.'})
-
-        return data
-
-    def create(self, validated_data):
         return specialoffers.objects.create(**validated_data)
     
     def update(self, instance, validated_data):
         # Check if the 'title' field is being updated and if the new title already exists
-        new_title = validated_data.get('title')
-        if new_title and new_title != instance.title and specialoffers.objects.filter(title=new_title).exists():
+        title = validated_data.get('title')
+        if specialoffers.objects.filter(title=title).exclude(id=instance.id).exists():
             raise serializers.ValidationError({'title': 'A special offer with this title already exists.'})
 
         # Update the instance with the validated data
@@ -85,6 +84,9 @@ class SpecialOfferSerializer(serializers.ModelSerializer):
         instance.display_order = validated_data.get('display_order', instance.display_order)
         instance.is_deleted = validated_data.get('is_deleted', instance.is_deleted)
         instance.save()
+        
+        return instance  # Return the updated instance
+
     
 
 
@@ -125,15 +127,10 @@ class ContactUsSerializer(serializers.ModelSerializer):
         if not name.replace(" ", "").isalpha():
             raise serializers.ValidationError("Name should contain only alphabets.")
 
-        existing_profiles = contactUs.objects.filter(name=name, email=email, phone=phone)
-        if existing_profiles.exists():
-            raise serializers.ValidationError({'A profile with these details already exists.'})
-
-
         # Check if a contactUs instance already exists with the same data
         existing_instance = contactUs.objects.filter(**validated_data).first()
         if existing_instance:
-            raise serializers.ValidationError({'A profile with these details already exists.'})
+            raise serializers.ValidationError('A profile with these details already exists.')
         
         existing_instance_name_phone_email = contactUs.objects.filter(name=validated_data.get('name'),
                                                      email=validated_data.get('email'),
@@ -163,31 +160,33 @@ class ContactUsSerializer(serializers.ModelSerializer):
         """
         Update and return an existing ContactUs instance.
         """
+    
 
-        # existing_instance = contactUs.objects.filter(**validated_data).first()
-        # if existing_instance:
-        #     return existing_instance
+        # Check if a contactUs instance already exists with the same data
+        existing_instance = contactUs.objects.filter(**validated_data).exists()
+        if existing_instance:
+            raise serializers.ValidationError({'A profile with these details already exists.'})
         
         existing_instance_name_phone_email = contactUs.objects.filter(name=validated_data.get('name'),
                                                      email=validated_data.get('email'),
-                                                     phone=validated_data.get('phone')).first()
+                                                     phone=validated_data.get('phone')).exclude(id=instance.id).exists()
         if existing_instance_name_phone_email:
             raise serializers.ValidationError({'A profile with these name,email,phone already exists.'})
         
         existing_instance_phone_email = contactUs.objects.filter(
                                                      email=validated_data.get('email'),
-                                                     phone=validated_data.get('phone')).first()
+                                                     phone=validated_data.get('phone')).exclude(id=instance.id).exists()
         if existing_instance_phone_email:
             raise serializers.ValidationError({'A profile with these email,phone already exists.'})
         
-        existing_email = contactUs.objects.filter(email=validated_data.get('email')).first()
+        existing_email = contactUs.objects.filter(email=validated_data.get('email')).exclude(id=instance.id).exists()
         if existing_email:
             raise serializers.ValidationError({'A profile with this email already exists.'})
         
-        existing_phone = contactUs.objects.filter(phone=validated_data.get('phone')).first()
+        existing_phone = contactUs.objects.filter(phone=validated_data.get('phone')).exclude(id=instance.id).exists()
         if existing_phone:
             raise serializers.ValidationError({'A profile with this phone already exists.'})
-            
+              
 
         instance.name = validated_data.get('name', instance.name)
         instance.email = validated_data.get('email', instance.email)
@@ -208,13 +207,9 @@ class GallerySerializer(serializers.ModelSerializer):
         """
         Validate the image_title and status fields.
         """
-        image_title = data.get('image_title')
         status = data.get('status')
 
-        if not image_title:
-            raise serializers.ValidationError({'image_title': 'Image title field is required'})
-        if not re.match("^[a-zA-Z\s]*$", image_title):
-            raise serializers.ValidationError({'image_title': 'Image title should only contain alphabets and spaces.'})
+        
 
         if status not in [0, 1]:
             raise serializers.ValidationError({'status': 'Status should have a value of 0 or 1.'})
@@ -223,8 +218,17 @@ class GallerySerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         """
-        Create and return a new Gallery instance.
+        Create and return a new Gallery instance, checking if image_title already exists.
         """
+        image_title = validated_data.get('image_title')
+        existing_gallery = gallery.objects.filter(image_title=image_title).exists()
+
+        if not image_title:
+            raise serializers.ValidationError({'image_title': 'Image title field is required'})
+        
+        if existing_gallery:
+            raise serializers.ValidationError("Image title already exists.")
+        
         return gallery.objects.create(**validated_data)
 
     def update(self, instance, validated_data):
@@ -234,8 +238,8 @@ class GallerySerializer(serializers.ModelSerializer):
         image_title = validated_data.get('image_title', instance.image_title)
 
         # Check if the updated image_title already exists for another instance
-        if gallery.objects.filter(image_title=image_title).exists():
-            raise serializers.ValidationError({ 'A gallery with this image title already exists.'})
+        if gallery.objects.filter(**validated_data).exclude(id=instance.id).exists():
+            raise serializers.ValidationError({ 'A gallery with these details already exists.'})
 
         # Update the instance with validated data
         instance.image_title = image_title
@@ -287,10 +291,48 @@ class AdminProfileSerializer(serializers.ModelSerializer):
         )
 
         if existing_profiles.exists():
-            existing_fields = {
-                'An admin profile with this full name, email address, and phone number already exists.'
-            }
-            raise serializers.ValidationError(existing_fields)
+            raise serializers.ValidationError('An admin profile with this full name, email address, and phone number already exists.')
+        
+        existing_profiles = AdminProfile.objects.filter(
+            email_address=email_address,
+            phone_number=phone_number
+        )
+
+        if existing_profiles.exists():
+            raise serializers.ValidationError('An admin profile with this email address, and phone number already exists.')
+        
+        existing_profiles = AdminProfile.objects.filter(
+            phone_number=phone_number
+        )
+
+        if existing_profiles.exists():
+            raise serializers.ValidationError('An admin profile with this phone number already exists.')
+        
+        existing_profiles = AdminProfile.objects.filter(
+            email_address=email_address,
+        )
+
+        if existing_profiles.exists():
+            raise serializers.ValidationError('An admin profile with this email address already exists.')
+        
+
+        existing_profiles = AdminProfile.objects.filter(
+            full_name__iexact=full_name,
+            email_address=email_address,
+        )
+        
+
+        if existing_profiles.exists():
+            raise serializers.ValidationError('An admin profile with this name and email address already exists.')
+        
+        existing_profiles = AdminProfile.objects.filter(
+            full_name__iexact=full_name,
+            phone_number=phone_number
+        )
+        
+
+        if existing_profiles.exists():
+            raise serializers.ValidationError('An admin profile with this name and phone number already exists.')
 
         return AdminProfile.objects.create(**validated_data)
     
@@ -299,6 +341,7 @@ class AdminProfileSerializer(serializers.ModelSerializer):
         full_name = validated_data.get('full_name', instance.full_name)
         email_address = validated_data.get('email_address', instance.email_address)
         phone_number = validated_data.get('phone_number', instance.phone_number)
+        photo = validated_data.get('photo', instance.photo)
 
         # Check if the updated full_name, email_address, and phone_number already exist in other profiles
         existing_profiles = AdminProfile.objects.filter(
@@ -307,14 +350,61 @@ class AdminProfileSerializer(serializers.ModelSerializer):
             phone_number=phone_number
         ).exclude(id=instance.id)
 
+
         if existing_profiles.exists():
-            raise serializers.ValidationError({
-                'non_field_errors': ['An admin profile with this updated full name, email address, and phone number already exists.']
-            })
+            raise serializers.ValidationError('An admin profile with this full name, email address, and phone number already exists.')
+        
+        existing_profiles = AdminProfile.objects.filter(
+            email_address=email_address,
+            phone_number=phone_number
+        ).exclude(id=instance.id)
+        
+
+        if existing_profiles.exists():
+            raise serializers.ValidationError('An admin profile with this email address, and phone number already exists.')
+        
+
+        existing_profiles = AdminProfile.objects.filter(
+            phone_number=phone_number
+        ).exclude(id=instance.id)
+        
+
+        if existing_profiles.exists():
+            raise serializers.ValidationError('An admin profile with this phone number already exists.')
+        
+        existing_profiles = AdminProfile.objects.filter(
+            email_address=email_address,
+        ).exclude(id=instance.id)
+        
+
+        if existing_profiles.exists():
+            raise serializers.ValidationError('An admin profile with this email address already exists.')
+        
+        existing_profiles = AdminProfile.objects.filter(
+            full_name__iexact=full_name,
+            email_address=email_address,
+        ).exclude(id=instance.id)
+        
+
+        if existing_profiles.exists():
+            raise serializers.ValidationError('An admin profile with this name and email address already exists.')
+        
+        existing_profiles = AdminProfile.objects.filter(
+            full_name__iexact=full_name,
+            phone_number=phone_number
+        ).exclude(id=instance.id)
+        
+
+        if existing_profiles.exists():
+            raise serializers.ValidationError('An admin profile with this name and phone number already exists.')
+
+
+
 
         instance.full_name = full_name
         instance.email_address = email_address
         instance.phone_number = phone_number
+        instance.photo=photo
         instance.save()
 
         return instance
@@ -328,21 +418,27 @@ class CMSSerializer(serializers.ModelSerializer):
                    'banner_image', 'banner_text1', 'banner_text2', 'banner_text3', 'status', 'is_deleted', 
                   'created_at', 'updated_at']
 
-    def validate(self, value):
+    def validate_page_title(self, value):
         """
         Check if the page title contains alphabets (lowercase and uppercase) and is not already taken.
         """
-        status = self.initial_data.get('status', None)
-
         # Check if the value contains only alphabets and whitespace
         if not value.replace(" ", "").isalpha():
             raise serializers.ValidationError("Page title should contain only alphabets.")
 
-        # Check if status has a valid value
-        if status not in [0, 1]:
-            raise serializers.ValidationError({'status': 'Status should have a value of 0 or 1.'})
+        # Check if page title already exists
+        if cms.objects.filter(page_title__iexact=value).exists():
+            raise serializers.ValidationError("Page title already exists.")
 
-        return value.lower()  # Convert name to lowercase
+        return value
+
+    def validate_status(self, value):
+        """
+        Check if status has a valid value.
+        """
+        if value not in [0, 1]:
+            raise serializers.ValidationError("Status should have a value of 0 or 1.")
+        return value
 
     
     def create(self, validated_data):
@@ -380,10 +476,12 @@ class CMSSerializer(serializers.ModelSerializer):
         return instance
 
 
+
+
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = category
-        fields = "__all__"
+        fields = '__all__'
 
 
     def validate_status(self, value):
@@ -391,40 +489,33 @@ class CategorySerializer(serializers.ModelSerializer):
         Validate that the status field has a value of 0 or 1.
         """
         if value not in [0, 1]:
-            raise serializers.ValidationError("Status should have a value of 0 or 1.")
-
-    def validate_category_name(self, value):
-        """
-        Check if category_name consists only of alphabets and spaces.
-        """
-        if not re.match("^[A-Za-z ]+$", value):
-            raise serializers.ValidationError("Category name must contain only alphabets and spaces.")
+            raise serializers.ValidationError("Status should have a value of either 0 or 1.")
         return value
 
     def create(self, validated_data):
         """
         Create and return a new category instance.
         """
+
         category_name = validated_data.get('category_name')
-        if not category_name:
-            raise serializers.ValidationError("Category name cannot be empty.")
-        if category.objects.filter(category_name=category_name).exists():
+        existing_category = category.objects.filter(category_name=category_name).exists()
+        
+        if existing_category:
             raise serializers.ValidationError("Category with this name already exists.")
         
         return category.objects.create(**validated_data)
-       
 
     def update(self, instance, validated_data):
         """
         Update and return an existing category instance.
         """
         category_name = validated_data.get('category_name')
-        if category_name and category_name != instance.category_name:
-            if category.objects.exclude(id=instance.id).filter(category_name=category_name).exists():
-                raise serializers.ValidationError(f"Category with the name '{category_name}' already exists.")
-            instance.category_name = category_name
-
-        # Update other fields
+        existing_category = category.objects.filter(category_name=category_name).exists()
+        
+        if existing_category:
+            raise serializers.ValidationError("Category with this name already exists.")
+        
+        instance.category_name = validated_data.get('category_name', instance.category_name)
         instance.category_desc = validated_data.get('category_desc', instance.category_desc)
         instance.image = validated_data.get('image', instance.image)
         instance.status = validated_data.get('status', instance.status)
@@ -434,7 +525,7 @@ class CategorySerializer(serializers.ModelSerializer):
 
         instance.save()
         return instance
-    
+
 
   
 class ItemsSerializer(serializers.ModelSerializer):
@@ -466,13 +557,6 @@ class ItemsSerializer(serializers.ModelSerializer):
         ]
     
 
-    def validate_status(self, value):
-        """
-        Validate that the status field has a value of 0 or 1.
-        """
-        if value not in [0, 1]:
-            raise serializers.ValidationError("Status should have a value of 0 or 1.")
-
 
     def validate_category_id(self, value):
         try:
@@ -483,6 +567,14 @@ class ItemsSerializer(serializers.ModelSerializer):
         if category_instance.status != 1:
             raise serializers.ValidationError("The selected category is not active.")
         
+        return value
+    
+    def validate_status(self, value):
+        """
+        Validate that the status field has a value of 0 or 1.
+        """
+        if value not in [0, 1]:
+            raise serializers.ValidationError("Status should have a value of either 0 or 1.")
         return value
 
     def create(self, validated_data):
@@ -495,7 +587,7 @@ class ItemsSerializer(serializers.ModelSerializer):
 
         # Check if an item with the same name already exists in the category
         if items.objects.filter(category_id=category_id, item_name=item_name).exists():
-            raise serializers.ValidationError("Only one category can have multiple items with the same name.")
+            raise serializers.ValidationError("This category with this item already exists...")
 
         # Retrieve the category instance
         try:
@@ -540,10 +632,7 @@ class ItemsSerializer(serializers.ModelSerializer):
         # Save the instance
         instance.save()
         
-        # Check if an item with the same name already exists in the category
-        if instance.category_id and instance.item_name:
-            if items.objects.filter(category_id=instance.category_id, item_name=instance.item_name).exists():
-                raise serializers.ValidationError("The category with this item name already exists...")
+       
 
         return instance
 
@@ -561,11 +650,13 @@ class ItemsSerializer(serializers.ModelSerializer):
 
 class SubItemsSerializer(serializers.ModelSerializer):
     item_id = serializers.IntegerField(write_only=True,required=False)
+    item_name=serializers.SerializerMethodField(read_only=True)
     class Meta:
         model = SubItems
         fields = [
             'id',
             'item_id',
+            'item_name',
             'sub_item_title',
             'price',
             'short_description',
@@ -578,12 +669,7 @@ class SubItemsSerializer(serializers.ModelSerializer):
 
 
 
-    def validate_status(self, value):
-        """
-        Validate that the status field has a value of 0 or 1.
-        """
-        if value not in [0, 1]:
-            raise serializers.ValidationError("Status should have a value of 0 or 1.") 
+     
     
     def validate_item_id(self, value):
         """
@@ -612,6 +698,10 @@ class SubItemsSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         item_id = validated_data.pop('item_id')
+        status=validated_data.get('status')
+        if not (status==1 or status==0):
+            raise serializers.ValidationError("status should be 0 or 1...")
+
         try:
             item_instance = items.objects.get(pk=item_id)
         except items.DoesNotExist:
@@ -620,10 +710,11 @@ class SubItemsSerializer(serializers.ModelSerializer):
         validated_data['item_id'] = item_instance
         return super().create(validated_data)
 
-
-
     def update(self, instance, validated_data):
         item_id = validated_data.pop('item_id', None)
+        status=validated_data.get('status')
+        if not (status==1 or status==0):
+            raise serializers.ValidationError("status should be 0 or 1...")
         if item_id:
             try:
                 item_instance = items.objects.get(pk=item_id)
@@ -648,6 +739,12 @@ class SubItemsSerializer(serializers.ModelSerializer):
         instance.save()
         
         return instance
+    
+    def get_item_name(self,obj):
+        if obj is not None:
+            return obj.item_id.item_name
+        else:
+            raise serializers.ValidationError('Item is empty...')
 
     
 
@@ -695,14 +792,29 @@ class OrderDetailsSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         # Extract the item_id and subitem_id data
-        item_id = validated_data.pop('item_id')
-        subitem_ids = validated_data.pop('subitem_id', [])  # Default to an empty list if not provided
+        try:
+            # Extract the item_id and subitem_id data
+            item_id = validated_data.pop('item_id')
+            subitem_ids = validated_data.pop('subitem_id')  # Default to an empty list if not provided
 
-        # Retrieve the associated item instance
-        item_instance = items.objects.get(id=item_id)
+            # Retrieve the associated item instance
+            item_instance = items.objects.get(id=item_id)
 
-        # Retrieve or create the associated subitem instances
-        subitem_instances = SubItems.objects.filter(id=subitem_ids)
+            # Retrieve or create the associated subitem instances
+            subitem_instances = SubItems.objects.filter(id=subitem_ids)
+
+        except ObjectDoesNotExist:
+               raise serializers.ValidationError("Item or SubItem does not exist.")
+        
+        if not item_instance or not subitem_instances.exists():
+             raise serializers.ValidationError("Item or SubItem does not exist.")
+        
+        if items.objects.filter(id=item_id,status=0).exists():
+            raise serializers.ValidationError("Item is not active you can't create order details...")
+        
+        if SubItems.objects.filter(id=subitem_ids,status=0).exists():
+            raise serializers.ValidationError("Sub Item is not active you can't create order details...")
+
 
         # Check if order details with the same item and subitems already exist
         existing_order_details = OrderDetails.objects.filter(
@@ -736,11 +848,11 @@ class OrderDetailsSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Order details with email, and phone number already exist.")
         
 
-        if OrderDetails.objects.filter(phone_number=validated_data.get('phone_number')).exists():
+        if OrderDetails.objects.filter(phone_number=validated_data.get('phone_number')):
             raise serializers.ValidationError(" phone number already exists in Order details...")
         
 
-        if OrderDetails.objects.filter(email=validated_data.get('email')).exists():
+        if OrderDetails.objects.filter(email=validated_data.get('email')):
             raise serializers.ValidationError(" email already exists in Order details...")
         
         
@@ -755,6 +867,24 @@ class OrderDetailsSerializer(serializers.ModelSerializer):
     
 
     def update(self, instance, validated_data):
+
+
+        try:
+            # Extract the item_id and subitem_id data
+            item_id = validated_data.get('item_id')
+            subitem_ids = validated_data.get('subitem_id')  # Default to an empty list if not provided
+
+            # Retrieve the associated item instance
+            item_instance = items.objects.get(id=item_id)
+
+            # Retrieve or create the associated subitem instances
+            subitem_instances = SubItems.objects.get(id=subitem_ids)
+
+        except ObjectDoesNotExist:
+               raise serializers.ValidationError("Item or SubItem does not exist.")
+        
+
+        
         # Update fields from validated data
         instance.total_price = validated_data.get('total_price', instance.total_price)
         instance.name = validated_data.get('name', instance.name)
@@ -848,78 +978,6 @@ class AllTablesSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('Invalid status choice. Status must be one of: {}'.format(', '.join(self.STATUS_CHOICES)))
         return value
 
-    # def validate_status(self, value):
-    #     lowercase_value = value.lower()
-    #     lowercase_choices = [choice.lower() for choice in self.STATUS_CHOICES]
-    #     if lowercase_value not in lowercase_choices:
-    #         raise serializers.ValidationError('Invalid status choice. Status must be one of: {}'.format(', '.join(self.STATUS_CHOICES)))
-    #     return value
-
-
-    class Meta:
-        model = AllTables
-        fields = ['id', 'table_name', 'no_of_seats', 'status', 'from_time', 'to_time', 'created_at', 'updated_at']
-        read_only_fields = ['created_at', 'updated_at']
-
-    def validate_table_name(self, value):
-        if AllTables.objects.exclude(id=self.instance.id if self.instance else None).filter(table_name__iexact=value).exists():
-            raise serializers.ValidationError('Table name must be unique.')
-        return value
-
-    # def validate_positive_integer(self, value):
-    #     if not 1 <= value <= 20:
-    #         raise serializers.ValidationError('Number of seats must be between 1 and 20.')
-    #     return value
-    def validate_positive_integer(self, value):
-        if value is not None and (value < 1 or value > 20):
-            raise serializers.ValidationError('Number of seats must be between 1 and 20.')
-        elif value is not None and value < 0:
-            raise serializers.ValidationError('Number of seats cannot be negative.')
-        return value
-    
-    def validate_no_of_seats(self, value):
-        if value is not None and not 1 <= value <= 20:
-            raise serializers.ValidationError('Number of seats must be between 1 and 20.')
-        return value
-    
-
-    def validate(self, data):
-        from_time = data.get('from_time')
-        to_time = data.get('to_time')
-
-        if from_time and to_time:
-            if from_time >= to_time:
-                raise serializers.ValidationError({'to_time': 'End time must be after start time.'})
-
-        return data
-        
-
-from .models import BookTheTable, AllTables
-from django.core.validators import MinValueValidator
-from django.core.exceptions import ValidationError
-import re
-from django.core.validators import validate_email
-from django.core.exceptions import ValidationError
-from datetime import datetime, time
-from django.utils import timezone
-
-
-
-    
-#AllTablesSerializer Code
-class AllTablesSerializer(serializers.ModelSerializer):
-    STATUS_CHOICES = ['booked', 'available']
-
-    def validate_status(self, value):
-        lowercase_value = value.lower()
-        lowercase_choices = [choice.lower() for choice in self.STATUS_CHOICES]
-        print("Lowercase choices:", lowercase_choices)
-        print("Lowercase value:", lowercase_value)
-        if lowercase_value not in lowercase_choices:
-            raise serializers.ValidationError('Invalid status choice. Status must be one of: {}'.format(', '.join(self.STATUS_CHOICES)))
-        return value
-
-
     class Meta:
         model = AllTables
         fields = ['id', 'table_name', 'no_of_seats', 'status', 'from_time', 'to_time', 'created_at', 'updated_at']
@@ -953,9 +1011,13 @@ class AllTablesSerializer(serializers.ModelSerializer):
 
         return data
 
+from datetime import *
+from .models import BookTheTable
 
 
 #BookTheTableSerializer code
+
+
 class BookTheTableSerializer(serializers.ModelSerializer):
     class Meta:
         model = BookTheTable
@@ -969,11 +1031,15 @@ class BookTheTableSerializer(serializers.ModelSerializer):
         timings = data.get('timings')
         total_members = data.get('total_members')
 
-        if table_id is None:
-            raise serializers.ValidationError({'table_id': 'Table ID cannot be null.'})
 
-        if not isinstance(table_id, AllTables):
-            raise serializers.ValidationError({'table_id': 'Invalid table ID provided.'})
+
+        # if table_id is None:
+        #     raise serializers.ValidationError({'table_id': 'Table ID cannot be null.'})
+        
+
+        
+
+       
 
         if total_members is not None and total_members <= 0:
             raise serializers.ValidationError("Total members must be a positive integer.")
@@ -992,6 +1058,13 @@ class BookTheTableSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Invalid email address format.")
         return value
     
+    # def validate_table_id(self,value):
+    #     table_id = value('table_id')
+    #     try:
+    #         table_instance = AllTables.objects.get(pk=table_id)
+    #     except table_instance.ObjectDoesNotExist:
+    #         raise serializers.ValidationError('Table does not exist....')
+    
     
     
     def create(self, validated_data):
@@ -1000,6 +1073,13 @@ class BookTheTableSerializer(serializers.ModelSerializer):
         date = validated_data.get('date')
         timings = validated_data.get('timings')
         total_members = validated_data.get('total_members')
+
+        
+        
+
+        if table_id is None:
+            raise serializers.ValidationError({'table_id': 'Table ID cannot be null.'})
+
 
         # Validate total members
         if total_members is not None and total_members <= 0:
@@ -1036,37 +1116,41 @@ class BookTheTableSerializer(serializers.ModelSerializer):
             booking_duration = datetime.combine(date, latest_booking.timings) + timedelta(hours=1)
             end_time = booking_duration.time()
             raise serializers.ValidationError({'timings': f'This table is not available for booking at {timings}. Please choose a time after {end_time} or select another table.'})
+            
+        existing_bookings = BookTheTable.objects.filter(table_id=table_id, date=date)
+        for booking in existing_bookings:
+            # Calculate the end time of the existing booking
+            booking_end_time = datetime.combine(date, booking.timings) + timedelta(hours=1)
+            if timings >= booking.timings and timings < booking_end_time.time():
+                raise serializers.ValidationError({'timings': f'This table is not available for booking at {timings}. Please choose a time after {booking_end_time.time()} or select another table.'})
 
         # Create the object
         return BookTheTable.objects.create(**validated_data)
- 
+
+
+
     def update(self, instance, validated_data):
-    # Update method-specific validations
-        timings = validated_data.get('timings')
-        date = validated_data.get('date')
-        table_id = validated_data.get('table_id')
+        # Check if 'date' or 'timings' fields are present in the request data
+        if 'date' in validated_data or 'timings' in validated_data:
+            # Update method-specific validations
+            current_date = datetime.now().date()
+            if 'date' in validated_data and validated_data['date'] < current_date:
+                raise serializers.ValidationError({'date': 'Booking date cannot be in the past.'})
 
-        # Validate if booking date is in the past
-        current_date = datetime.now().date()
-        if date < current_date:
-            raise serializers.ValidationError({'date': 'Booking date cannot be in the past.'})
+            operating_hours_start = time(5, 0)  # Assuming opening time is 5:00 AM
+            operating_hours_end = time(23, 0)   # Assuming closing time is 11:00 PM
+            if 'timings' in validated_data and not (operating_hours_start <= validated_data['timings'] <= operating_hours_end):
+                raise serializers.ValidationError({'timings': 'Booking time must be within operating hours (5 a.m. to 11 p.m.).'})
 
-        # Validate if booking time is within operating hours
-        operating_hours_start = time(5, 0)  # Assuming opening time is 5:00 AM
-        operating_hours_end = time(23, 0)   # Assuming closing time is 11:00 PM
-        if not (operating_hours_start <= timings <= operating_hours_end):
-            raise serializers.ValidationError({'timings': 'Booking time must be within operating hours (5 a.m. to 11 p.m.).'})
+            if 'date' in validated_data and validated_data['date'] == current_date:
+                current_time = datetime.now().time()
+                if 'timings' in validated_data and validated_data['timings'] <= current_time:
+                    raise serializers.ValidationError({'timings': 'Booking time cannot be in the past for today\'s date.'})
 
-        # If the booking date is today, check if the time is in the past
-        if date == current_date:
-            current_time = datetime.now().time()
-            if timings <= current_time:
-                raise serializers.ValidationError({'timings': 'Booking time cannot be in the past for today\'s date.'})
-
-        # Check if there is another booking for the same date, time, and table
-        existing_booking = BookTheTable.objects.filter(table_id=table_id, date=date, timings=timings).exclude(id=instance.id).first()
-        if existing_booking:
-            raise serializers.ValidationError({'timings': f'This table is already booked for the same date and time.'})
+            if 'date' in validated_data and 'timings' in validated_data:
+                existing_booking = BookTheTable.objects.filter(table_id=validated_data['table_id'], date=validated_data['date'], timings=validated_data['timings']).exclude(id=instance.id).first()
+                if existing_booking:
+                    raise serializers.ValidationError('This table is already booked for the same date and time.')
 
         # Update the object
         instance.customer_name = validated_data.get('customer_name', instance.customer_name)
